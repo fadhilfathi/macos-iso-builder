@@ -15,34 +15,34 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      # Checkout repo — required for gh release
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      # Download build artifacts
+      - name: Set GH_TOKEN
+        run: echo "GH_TOKEN is set"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Download latest build artifact
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # If triggered automatically, download artifact from workflow_run
+          mkdir -p ./release-artifact
+
           if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
             echo "Downloading artifact from workflow_run ID ${{ github.event.workflow_run.id }}"
-            mkdir -p ./release-artifact
-            gh run download ${{ github.event.workflow_run.id }} --dir ./release-artifact || echo "No artifacts found in workflow_run"
+            gh run download ${{ github.event.workflow_run.id }} --dir ./release-artifact --raw || echo "No artifacts found in workflow_run"
           else
-            # If manual, try to get latest successful Build run
             echo "Manual trigger: fetching latest successful build artifacts"
             LAST_RUN_ID=$(gh run list --workflow "Build macOS Installer ISO/DMG image" --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')
             if [ -n "$LAST_RUN_ID" ]; then
               echo "Latest successful build run: $LAST_RUN_ID"
-              mkdir -p ./release-artifact
-              gh run download $LAST_RUN_ID --dir ./release-artifact || echo "No artifacts found in latest build run"
+              gh run download $LAST_RUN_ID --dir ./release-artifact --raw || echo "No artifacts found in latest build run"
             else
               echo "No previous successful build run found"
             fi
           fi
 
-      # List files for debugging
       - name: List files to be uploaded
         run: |
           echo "Files to be uploaded:"
@@ -52,19 +52,14 @@ jobs:
             ls -1 ./*.iso ./*.dmg.img 2>/dev/null || echo "No ISO/DMG files found in ./ or release-artifact"
           fi
 
-      # Create or update GitHub Release
-      - name: Create or update GitHub Release v1.0.0
+      - name: Upload files to GitHub Release v1.0.0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # create release if not exists
-          gh release create v1.0.0 \
-            --title "v1.0.0" \
-            --notes "Automated macOS installer image release" \
-            --latest || true
-
-          # Upload files safely
+          # Only upload files if they exist
           if [ -d ./release-artifact ] && [ "$(ls -A ./release-artifact)" ]; then
-            gh release upload v1.0.0 ./release-artifact/**/* --clobber || echo "No files uploaded from release-artifact"
+            echo "Uploading files to existing release v1.0.0"
+            gh release upload v1.0.0 ./release-artifact/* --clobber
           else
-            gh release upload v1.0.0 ./*.iso ./*.dmg.img --clobber || echo "No ISO/DMG files found in ./ or release-artifact"
+            echo "No files to upload"
+          fi
