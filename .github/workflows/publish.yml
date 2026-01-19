@@ -1,12 +1,12 @@
 name: Publish Release v1.0.0
 
 on:
+  workflow_dispatch:  # can be triggered manually
   workflow_run:
     workflows:
       - "Build macOS Installer ISO/DMG image"
     types:
       - completed
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -21,42 +21,35 @@ jobs:
 
       # Set GH_TOKEN for gh CLI
       - name: Set GH_TOKEN
-        run: echo "GH_TOKEN is set"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "GH_TOKEN set"
 
-      # Download artifacts from workflow_run or latest successful build
-      - name: Download latest build artifacts
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p ./release-artifact
-
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
-            echo "Downloading all artifacts from workflow_run ID ${{ github.event.workflow_run.id }}"
-            gh run download ${{ github.event.workflow_run.id }} --name "*" --dir ./release-artifact || echo "No artifacts found in workflow_run"
-          else
-            echo "Manual trigger: fetching latest successful build artifacts"
-            LAST_RUN_ID=$(gh run list --workflow "Build macOS Installer ISO/DMG image" --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')
-            if [ -n "$LAST_RUN_ID" ]; then
-              echo "Latest successful build run: $LAST_RUN_ID"
-              gh run download $LAST_RUN_ID --name "*" --dir ./release-artifact || echo "No artifacts found in latest build run"
-            else
-              echo "No previous successful build run found"
-            fi
-          fi
-
-      # List all downloaded files for debugging
+      # List ISO/DMG files
       - name: List files to be uploaded
         run: |
-          echo "Files to be uploaded:"
-          find ./release-artifact -type f -name "*.iso" -o -name "*.dmg.img" || echo "No ISO/DMG files found"
+          echo "Searching for ISO/DMG files..."
+          find . -maxdepth 2 -type f -name "*.iso" -o -name "*.dmg.img" || echo "No ISO/DMG files found"
 
       # Upload files to GitHub Release v1.0.0
       - name: Upload files to GitHub Release v1.0.0
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          find ./release-artifact -type f -name "*.iso" -o -name "*.dmg.img" | while read f; do
-            echo "Uploading $f to release v1.0.0"
-            gh release upload v1.0.0 "$f" --clobber || echo "Failed to upload $f"
+          FILES=$(find . -maxdepth 2 -type f -name "*.iso" -o -name "*.dmg.img")
+          if [ -z "$FILES" ]; then
+            echo "No ISO/DMG files found, skipping release upload"
+            exit 0
+          fi
+
+          # Create release if it doesn't exist
+          gh release create v1.0.0 \
+            --title "v1.0.0" \
+            --notes "Automated macOS installer image release" \
+            --latest || echo "Release already exists"
+
+          # Upload each file
+          for f in $FILES; do
+            echo "Uploading $f..."
+            gh release upload v1.0.0 "$f" --clobber
+          done
