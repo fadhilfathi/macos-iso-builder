@@ -1,29 +1,43 @@
-name: Publish macOS Release
-
-permissions:
-  contents: write    # gives write permission to repo contents (needed to create release & upload)
-  # Add others if needed (e.g., actions: write, packages: write)
+name: Publish Release v1.0.0
 
 on:
-  push:
-    tags:
-      - "v1.0.0"
+  workflow_run:
+    workflows:
+      - "Build macOS Installer ISO/DMG image"
+    types:
+      - completed
+
+permissions:
+  contents: write   # REQUIRED for creating releases
 
 jobs:
   publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download build artifact
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: macos-iso
+          run-id: ${{ github.event.workflow_run.id }}
           path: ./release-artifact
 
-      - name: Create GitHub Release and upload ISO
+      - name: List downloaded files (debug)
+        run: |
+          echo "Downloaded artifacts:"
+          find ./release-artifact -type f
+
+      - name: Create or update GitHub Release v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create v1.0.0 ./release-artifact/*.iso \
+          # Create release if it does not exist
+          gh release create v1.0.0 \
             --title "v1.0.0" \
-            --notes "Automated release with macOS ISO"
+            --notes "Automated macOS installer image release" \
+            --latest || true
+
+          # Upload ISO / DMG files
+          gh release upload v1.0.0 \
+            ./release-artifact/**/* \
+            --clobber
