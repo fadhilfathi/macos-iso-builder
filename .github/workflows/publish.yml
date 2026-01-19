@@ -33,23 +33,14 @@ jobs:
           mkdir -p ./release-artifact
 
           if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
-            echo "Downloading artifacts from workflow_run ID ${{ github.event.workflow_run.id }}"
-            # Download all artifacts
-            ARTIFACTS=$(gh run view ${{ github.event.workflow_run.id }} --json artifacts -q '.artifacts[].name')
-            for a in $ARTIFACTS; do
-              echo "Downloading artifact: $a"
-              gh run download ${{ github.event.workflow_run.id }} --name "$a" --dir ./release-artifact || echo "Failed to download $a"
-            done
+            echo "Downloading all artifacts from workflow_run ID ${{ github.event.workflow_run.id }}"
+            gh run download ${{ github.event.workflow_run.id }} --name "*" --dir ./release-artifact || echo "No artifacts found in workflow_run"
           else
             echo "Manual trigger: fetching latest successful build artifacts"
             LAST_RUN_ID=$(gh run list --workflow "Build macOS Installer ISO/DMG image" --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')
             if [ -n "$LAST_RUN_ID" ]; then
               echo "Latest successful build run: $LAST_RUN_ID"
-              ARTIFACTS=$(gh run view $LAST_RUN_ID --json artifacts -q '.artifacts[].name')
-              for a in $ARTIFACTS; do
-                echo "Downloading artifact: $a"
-                gh run download $LAST_RUN_ID --name "$a" --dir ./release-artifact || echo "Failed to download $a"
-              done
+              gh run download $LAST_RUN_ID --name "*" --dir ./release-artifact || echo "No artifacts found in latest build run"
             else
               echo "No previous successful build run found"
             fi
@@ -66,8 +57,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Upload all ISO/DMG files inside nested folders
           find ./release-artifact -type f -name "*.iso" -o -name "*.dmg.img" | while read f; do
             echo "Uploading $f to release v1.0.0"
             gh release upload v1.0.0 "$f" --clobber || echo "Failed to upload $f"
-          done
