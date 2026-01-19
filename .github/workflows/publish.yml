@@ -19,10 +19,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      # Ensure gh CLI is installed
-      - name: Setup GitHub CLI
-        uses: cli/cli@v3
-
       # Download build artifacts
       - name: Download latest build artifact
         run: |
