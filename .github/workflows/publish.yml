@@ -15,51 +15,59 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
+      # Checkout repo — required for gh release
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      # Set GH_TOKEN for gh CLI
       - name: Set GH_TOKEN
         run: echo "GH_TOKEN is set"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download latest build artifact
+      # Download artifacts from workflow_run or latest successful build
+      - name: Download latest build artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p ./release-artifact
 
           if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
-            echo "Downloading artifact from workflow_run ID ${{ github.event.workflow_run.id }}"
-            gh run download ${{ github.event.workflow_run.id }} --dir ./release-artifact --raw || echo "No artifacts found in workflow_run"
+            echo "Downloading artifacts from workflow_run ID ${{ github.event.workflow_run.id }}"
+            # Download all artifacts
+            ARTIFACTS=$(gh run view ${{ github.event.workflow_run.id }} --json artifacts -q '.artifacts[].name')
+            for a in $ARTIFACTS; do
+              echo "Downloading artifact: $a"
+              gh run download ${{ github.event.workflow_run.id }} --name "$a" --dir ./release-artifact || echo "Failed to download $a"
+            done
           else
             echo "Manual trigger: fetching latest successful build artifacts"
             LAST_RUN_ID=$(gh run list --workflow "Build macOS Installer ISO/DMG image" --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')
             if [ -n "$LAST_RUN_ID" ]; then
               echo "Latest successful build run: $LAST_RUN_ID"
-              gh run download $LAST_RUN_ID --dir ./release-artifact --raw || echo "No artifacts found in latest build run"
+              ARTIFACTS=$(gh run view $LAST_RUN_ID --json artifacts -q '.artifacts[].name')
+              for a in $ARTIFACTS; do
+                echo "Downloading artifact: $a"
+                gh run download $LAST_RUN_ID --name "$a" --dir ./release-artifact || echo "Failed to download $a"
+              done
             else
               echo "No previous successful build run found"
             fi
           fi
 
+      # List all downloaded files for debugging
       - name: List files to be uploaded
         run: |
           echo "Files to be uploaded:"
-          if [ -d ./release-artifact ] && [ "$(ls -A ./release-artifact)" ]; then
-            find ./release-artifact -type f
-          else
-            ls -1 ./*.iso ./*.dmg.img 2>/dev/null || echo "No ISO/DMG files found in ./ or release-artifact"
-          fi
+          find ./release-artifact -type f -name "*.iso" -o -name "*.dmg.img" || echo "No ISO/DMG files found"
 
+      # Upload files to GitHub Release v1.0.0
       - name: Upload files to GitHub Release v1.0.0
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Only upload files if they exist
-          if [ -d ./release-artifact ] && [ "$(ls -A ./release-artifact)" ]; then
-            echo "Uploading files to existing release v1.0.0"
-            gh release upload v1.0.0 ./release-artifact/* --clobber
-          else
-            echo "No files to upload"
-          fi
+          # Upload all ISO/DMG files inside nested folders
+          find ./release-artifact -type f -name "*.iso" -o -name "*.dmg.img" | while read f; do
+            echo "Uploading $f to release v1.0.0"
+            gh release upload v1.0.0 "$f" --clobber || echo "Failed to upload $f"
+          done
