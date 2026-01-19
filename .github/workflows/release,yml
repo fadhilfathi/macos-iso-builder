@@ -1,35 +1,32 @@
-name: Publish macOS ISO to Release
+name: Release v1.0.0
 
-# Trigger this when a push is made to the tag v1.0.0
 on:
-  push:
-    tags:
-      - "v1.0.0"
+  workflow_run:
+    workflows: ["Build"]   # 👈 MUST match build workflow name exactly
+    types:
+      - completed
+
+permissions:
+  contents: write          # 👈 REQUIRED for gh release create
 
 jobs:
   release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: write  # Required to create/update releases
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # Step: Download your existing action artifact
-      - name: Download build artifact from another workflow
+      - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
-          name: macos-iso           # The artifact name from your build workflow
-          path: ./release-artifact  # Local folder where file will be downloaded
+          name: macos-iso          # 👈 must match upload-artifact name
+          path: ./release-artifact
 
-      # Step: Create / Update the GitHub Release
-      - name: Create or update Release v1.0.0
-        id: create_release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: "v1.0.0"
-          allowUpdates: true       # Update existing release if v1.0.0 already exists
-          body: "Automated ISO release"
-          artifacts: "./release-artifact/*"
-
+      - name: Create GitHub Release and upload ISO
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create v1.0.0 ./release-artifact/*.iso \
+            --title "v1.0.0" \
+            --notes "Automated macOS ISO release" \
+            --latest || \
+          gh release upload v1.0.0 ./release-artifact/*.iso --clobber
