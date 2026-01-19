@@ -1,0 +1,35 @@
+name: Publish macOS ISO to Release
+
+# Trigger this when a push is made to the tag v1.0.0
+on:
+  push:
+    tags:
+      - "v1.0.0"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to create/update releases
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step: Download your existing action artifact
+      - name: Download build artifact from another workflow
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-iso           # The artifact name from your build workflow
+          path: ./release-artifact  # Local folder where file will be downloaded
+
+      # Step: Create / Update the GitHub Release
+      - name: Create or update Release v1.0.0
+        id: create_release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: "v1.0.0"
+          allowUpdates: true       # Update existing release if v1.0.0 already exists
+          body: "Automated ISO release"
+          artifacts: "./release-artifact/*"
+
