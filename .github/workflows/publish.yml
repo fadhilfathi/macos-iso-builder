@@ -1,31 +1,37 @@
 name: Publish Release v1.0.0
 
+# Can be triggered manually or automatically after build
 on:
   workflow_run:
     workflows:
       - "Build macOS Installer ISO/DMG image"
     types:
       - completed
+  workflow_dispatch:
 
 permissions:
   contents: write   # REQUIRED for creating releases
 
 jobs:
   publish:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-
     steps:
-      - name: Download all build artifacts
+      # If triggered manually, skip download-artifact (assume files are in ./)
+      - name: Download build artifacts if workflow_run triggered
+        if: github.event_name == 'workflow_run'
         uses: actions/download-artifact@v4
         with:
           run-id: ${{ github.event.workflow_run.id }}
           path: ./release-artifact
 
-      - name: List downloaded files (debug)
+      - name: List files to publish (debug)
         run: |
-          echo "Downloaded artifacts:"
-          find ./release-artifact -type f
+          echo "Files to be uploaded:"
+          if [ -d ./release-artifact ]; then
+            find ./release-artifact -type f
+          else
+            find ./ -maxdepth 1 -type f -name "*.iso" -o -name "*.dmg.img"
+          fi
 
       - name: Create or update GitHub Release v1.0.0
         env:
@@ -38,6 +44,8 @@ jobs:
             --latest || true
 
           # Upload ISO / DMG files
-          gh release upload v1.0.0 \
-            ./release-artifact/**/* \
-            --clobber
+          if [ -d ./release-artifact ]; then
+            gh release upload v1.0.0 ./release-artifact/**/* --clobber
+          else
+            gh release upload v1.0.0 ./*.iso ./*.dmg.img --clobber
+          fi
